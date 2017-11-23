@@ -1,0 +1,4 @@
+*.o
+.DS_Store
+.qmake.cache
+.qmake.stash
