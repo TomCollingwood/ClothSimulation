@@ -7,6 +7,8 @@
 #include <ngl/ShaderLib.h>
 #include "scene.h"
 
+enum sphere_directions {STATIONARY, SPHERE_UP, SPHERE_DOWN, SPHERE_LEFT, SPHERE_RIGHT, SPHERE_FORWARDS, SPHERE_BACKWARDS};
+
 struct PointMass
 {
   glm::vec3 velocity;
@@ -52,6 +54,14 @@ public:
 
     void updateSimulation();
 
+    void handleKey(int key, int action);
+
+    void loadMatricesToShader(GLint pid, glm::vec3 translation);
+
+    void moveSphere();
+
+    void updateNormals();
+
 private:
     /// Keep track of the currently active shader method
     ShaderMethod m_shaderMethod = SHADER_PHONG;
@@ -68,6 +78,11 @@ private:
     float leftOvertime = 0.0f;
 
     int res = 32;
+
+    std::unique_ptr<ngl::Obj> m_sphere;
+    glm::vec3 sphereTranslation = glm::vec3(0.0f);
+    sphere_directions m_sphereDirection;
+
 
     std::vector<glm::vec3> vertexPositions;
     std::vector<glm::vec3> vertexNormals;

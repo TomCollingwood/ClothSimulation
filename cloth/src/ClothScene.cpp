@@ -41,6 +41,9 @@ void ClothScene::initGL() noexcept {
 
     glBindVertexArray(0);
 
+    m_sphere.reset(new ngl::Obj("models/sphere.obj"));
+    m_sphere->createVAO();
+
     last_time = clock();
 }
 
@@ -75,31 +78,11 @@ void ClothScene::paintGL() noexcept {
         break;
     }
 
-    // Our MVP matrices
-    glm::mat4 M = glm::mat4(1.0f);
-    glm::mat4 MVP, MV;
-    glm::mat3 N;
-
-    // Note the matrix multiplication order as we are in COLUMN MAJOR storage
-    MV = m_V * M;
-    N = glm::inverse(glm::mat3(MV));
-    MVP = m_P * MV;
-
-    // Set this MVP on the GPU
-    glUniformMatrix4fv(glGetUniformLocation(pid, "MVP"), //location of uniform
-                       1, // how many matrices to transfer
-                       false, // whether to transpose matrix
-                       glm::value_ptr(MVP)); // a raw pointer to the data
-    glUniformMatrix4fv(glGetUniformLocation(pid, "MV"), //location of uniform
-                       1, // how many matrices to transfer
-                       false, // whether to transpose matrix
-                       glm::value_ptr(MV)); // a raw pointer to the data
-    glUniformMatrix3fv(glGetUniformLocation(pid, "N"), //location of uniform
-                       1, // how many matrices to transfer
-                       true, // whether to transpose matrix
-                       glm::value_ptr(N)); // a raw pointer to the data
+    loadMatricesToShader(pid,glm::vec3(0.0f,0.0f,0.0f));
 
     updateSimulation();
+
+    updateNormals();
 
     glBindVertexArray(vertexArrayIdx);
 
@@ -125,7 +108,7 @@ void ClothScene::paintGL() noexcept {
     unsigned int num_tris = (res-1)*(res-1)*2;
     unsigned int num_points = res * res;
 
-    glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+    //glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementsIdx);
     glDrawElements(GL_TRIANGLES, num_tris*3, GL_UNSIGNED_INT, 0);
@@ -135,6 +118,10 @@ void ClothScene::paintGL() noexcept {
     glDrawArrays(GL_POINTS, 0, num_points);
 
     glBindVertexArray(0);
+
+
+    loadMatricesToShader(pid,sphereTranslation);
+    m_sphere->draw();
 
     //ngl::VAOPrimitives *prim=ngl::VAOPrimitives::instance();
     //prim->draw("teapot");
@@ -248,7 +235,7 @@ void ClothScene::updateSimulation()
   int timesteps = floor(float(deltaT+leftOvertime)/timestepLength);
   leftOvertime=deltaT-timestepLength*timesteps;
 
-  std::cout<<"deltaT: "<<deltaT<<"timesteps"<<timesteps<<"\n";
+  //std::cout<<"deltaT: "<<deltaT<<"timesteps"<<timesteps<<"\n";
 
   for(int n =0; n<timesteps; ++n)
   {
@@ -276,6 +263,21 @@ void ClothScene::updateSimulation()
       vertexPositions[res-1] = glm::vec3(float(res-1)/float(res),0.0f,0.0f);
     }
 
+    for(int i=0; i<res; ++i)
+    {
+      for(int j=0; j<res; ++j)
+      {
+        glm::vec3 distance = vertexPositions[i*res + j] - sphereTranslation;
+        float d = glm::length(distance);
+
+        float radius = 0.2442f;
+        if(d<radius)
+        {
+          vertexPositions[i*res + j]+=((radius-d)/radius)*distance;
+        }
+      }
+    }
+
     //--------------------------VERLET INTEGRATION----------------------------
     for(int i=0; i<res; ++i)
     {
@@ -290,17 +292,131 @@ void ClothScene::updateSimulation()
       }
     }
   }
+  moveSphere();
 }
 
-//void ClothScene::handleKey(int key, bool action)
-//{
-//  if (action) {
-//      switch(key) {
-//      case GLFW_KEY_W:
-//      case GLFW_KEY_S:
-//      case GLFW_KEY_A:
-//      case GLFW_KEY_D:
-//          break;
-//      }
-//  }
-//}
+void ClothScene::handleKey(int key, int action)
+{
+  if (action==GLFW_PRESS) {
+      switch(key) {
+      case GLFW_KEY_W:
+        m_sphereDirection=SPHERE_FORWARDS;
+        break;
+      case GLFW_KEY_S:
+        m_sphereDirection=SPHERE_BACKWARDS;
+        break;
+      case GLFW_KEY_A:
+        m_sphereDirection=SPHERE_LEFT;
+        break;
+      case GLFW_KEY_D:
+        m_sphereDirection=SPHERE_RIGHT;
+        break;
+      case GLFW_KEY_R:
+        m_sphereDirection=SPHERE_UP;
+        break;
+      case GLFW_KEY_F:
+        m_sphereDirection=SPHERE_DOWN;
+        break;
+      }
+  }
+  if(action==GLFW_RELEASE)
+  {
+    switch(key) {
+    case GLFW_KEY_W:
+      m_sphereDirection=STATIONARY;
+      break;
+    case GLFW_KEY_S:
+      m_sphereDirection=STATIONARY;
+      break;
+    case GLFW_KEY_A:
+      m_sphereDirection=STATIONARY;
+      break;
+    case GLFW_KEY_D:
+      m_sphereDirection=STATIONARY;
+      break;
+    case GLFW_KEY_R:
+      m_sphereDirection=STATIONARY;
+      break;
+    case GLFW_KEY_F:
+      m_sphereDirection=STATIONARY;
+      break;
+    }
+  }
+}
+
+void ClothScene::moveSphere()
+{
+  switch(m_sphereDirection) {
+  case SPHERE_FORWARDS:
+    sphereTranslation+=glm::vec3(0.0f,0.0f,0.01f);
+    std::cout<<"HELLO\n";
+    break;
+  case SPHERE_BACKWARDS:
+    sphereTranslation+=glm::vec3(0.0f,0.0f,-0.01f);
+    break;
+  case SPHERE_LEFT:
+    sphereTranslation+=glm::vec3(0.01f,0.0f,0.0f);
+    break;
+  case SPHERE_RIGHT:
+    sphereTranslation+=glm::vec3(-0.01f,0.0f,0.0f);
+    break;
+  case SPHERE_UP:
+    sphereTranslation+=glm::vec3(0.0f,0.01f,0.0f);
+    break;
+  case SPHERE_DOWN:
+    sphereTranslation+=glm::vec3(0.0f,-0.01f,0.0f);
+    break;
+  }
+}
+
+void ClothScene::loadMatricesToShader(GLint pid, glm::vec3 translation)
+{
+  // Our MVP matrices
+  glm::mat4 M = glm::mat4(1.0f);
+  glm::mat4 MVP, MV;
+  glm::mat3 N;
+
+  M[3][0] = translation[0];
+  M[3][1] = translation[1];
+  M[3][2] = translation[2];
+
+
+  // Note the matrix multiplication order as we are in COLUMN MAJOR storage
+  MV = m_V * M;
+  N = glm::inverse(glm::mat3(MV));
+  MVP = m_P * MV;
+
+  // Set this MVP on the GPU
+  glUniformMatrix4fv(glGetUniformLocation(pid, "MVP"), //location of uniform
+                     1, // how many matrices to transfer
+                     false, // whether to transpose matrix
+                     glm::value_ptr(MVP)); // a raw pointer to the data
+  glUniformMatrix4fv(glGetUniformLocation(pid, "MV"), //location of uniform
+                     1, // how many matrices to transfer
+                     false, // whether to transpose matrix
+                     glm::value_ptr(MV)); // a raw pointer to the data
+  glUniformMatrix3fv(glGetUniformLocation(pid, "N"), //location of uniform
+                     1, // how many matrices to transfer
+                     true, // whether to transpose matrix
+                     glm::value_ptr(N)); // a raw pointer to the data
+}
+
+void ClothScene::updateNormals()
+{
+  for(int i =0; i<res; ++i)
+  {
+    for(int j =0 ; j<res; ++j)
+    {
+      if(i!=0 && j!=0 && i!=(res-1) && j!=(res-1));
+      glm::vec3 A = vertexPositions[i*res + j] - vertexPositions[i*res + j +1];
+      glm::vec3 B = vertexPositions[i*res + j] - vertexPositions[(i+1)*res + j];
+      glm::vec3 C = vertexPositions[i*res + j] - vertexPositions[i*res + j -1];
+      glm::vec3 D = vertexPositions[i*res + j] - vertexPositions[(i-1)*res + j];
+
+      glm::vec3 vect1 = glm::cross(A,B);
+      glm::vec3 vect2 = glm::cross(C,D);
+
+      vertexNormals[i*res + j]=glm::normalize((vect1+vect2)/2.0f);
+    }
+  }
+}
