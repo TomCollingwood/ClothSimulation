@@ -4,7 +4,8 @@
 TEMPLATE = app
 
 # Is this using the lab build? (this is for my personal use - RS)
-LAB_BUILD=false
+LAB_BUILD=true
+QMAKE_CFLAGS_ISYSTEM=
 
 # Check to see if you have a custom NGL installation directory
 NGLPATH = $$(NGLDIR)

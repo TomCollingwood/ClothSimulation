@@ -16,7 +16,7 @@ struct PointMass
   int index;
 };
 
-struct Link
+struct Spring
 {
   float restingDistance;
   float stiffness;
@@ -87,7 +87,9 @@ private:
     std::vector<glm::vec3> vertexPositions;
     std::vector<glm::vec3> vertexNormals;
     std::vector<PointMass> pointMasses;
-    std::vector<Link> m_structuralSprings;
+    std::vector<Spring> m_springs;
+
+
 };
 
 #endif // ClothScene_H

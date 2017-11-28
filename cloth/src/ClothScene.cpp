@@ -6,6 +6,7 @@
 #include <ngl/VAOPrimitives.h>
 #include <ngl/ShaderLib.h>
 #include <math.h>
+#include <time.h>
 
 ClothScene::ClothScene() : Scene() {}
 
@@ -172,6 +173,8 @@ void ClothScene::initSpringsAndVerts()
   vertexNormals.resize(res*res);
   pointMasses.resize(res*res);
 
+  //--------------------------STRUCTURAL SPRINGS---------------
+
   for(int i=0; i<res; ++i)
   {
     for(int j=0; j<res; ++j)
@@ -188,69 +191,138 @@ void ClothScene::initSpringsAndVerts()
       //-----------SETUP SPRINGS---------------
       if(j!=(res-1) && i!=(res-1))
       {
-        Link newLink1;
+        Spring newLink1;
         newLink1.PointMassA = i*res+j;
         newLink1.PointMassB = i*res+j+1;
         newLink1.restingDistance=1.0f/float(res);
         newLink1.stiffness=0.5f;
-        m_structuralSprings.push_back(newLink1);
-        Link newLink2;
+        m_springs.push_back(newLink1);
+        Spring newLink2;
         newLink2.PointMassA = i*res+j;
         newLink2.PointMassB = (i+1)*res+j;
         newLink2.restingDistance=1.0f/float(res);
         newLink2.stiffness=0.5f;
-        m_structuralSprings.push_back(newLink2);
+        m_springs.push_back(newLink2);
       }
       //-------------FAR LEFT-------------------
       else if(j==(res-1) && i!=(res-1))
       {
-        Link newLink2;
+        Spring newLink2;
         newLink2.PointMassA = i*res+j;
         newLink2.PointMassB = (i+1)*res+j;
         newLink2.restingDistance=1.0f/float(res);
         newLink2.stiffness=0.5f;
-        m_structuralSprings.push_back(newLink2);
+        m_springs.push_back(newLink2);
       }
       //-------------TOP ROW------------------
       else if(i==(res-1)&&j!=(res-1))
       {
-        Link newLink1;
+        Spring newLink1;
         newLink1.PointMassA = i*res+j;
         newLink1.PointMassB = i*res+j+1;
         newLink1.restingDistance=1.0f/float(res);
 
         newLink1.stiffness=0.5f;
-        m_structuralSprings.push_back(newLink1);
+        m_springs.push_back(newLink1);
       }
     }
   }
+
+  // */
+
+  //--------------BEND SPRINGS----------------------
+
+  for(int i =0 ; i<res; ++i)
+  {
+      for(int j =0; j<res; ++j)
+      {
+          if(i<(res-2) && j<(res-2))
+          {
+            Spring newBend;
+            newBend.PointMassA = i*res + j;
+            newBend.PointMassB = i*res + j + 2;
+            newBend.restingDistance = 2.0f/float(res);
+            newBend.stiffness=1.0f;
+            m_springs.push_back(newBend);
+            Spring newBend2;
+            newBend2.PointMassA = i*res + j;
+            newBend2.PointMassB = (i+2)*res + j;
+            newBend2.restingDistance = 2.0f/float(res);
+            newBend2.stiffness=1.0f;
+            m_springs.push_back(newBend2);
+          }
+          else if(i>=(res-2) && j<(res-2))
+          {
+              Spring newBend;
+              newBend.PointMassA = i*res + j;
+              newBend.PointMassB = i*res + j + 2;
+              newBend.restingDistance = 2.0f/float(res);
+              newBend.stiffness=1.0f;
+              m_springs.push_back(newBend);
+          }
+          else if(j>=(res-2) && i<(res-2))
+          {
+              Spring newBend2;
+              newBend2.PointMassA = i*res + j;
+              newBend2.PointMassB = (i+2)*res + j;
+              newBend2.restingDistance = 2.0f/float(res);
+              newBend2.stiffness=1.0f;
+              m_springs.push_back(newBend2);
+          }
+      }
+  }
+  //---------------SHEAR SPRINGS-----------------------
+  float normald = 1.0f/float(res);
+  float distance = sqrt(2*(normald*normald));
+  for(int i =0; i<res; ++i)
+  {
+      for(int j=0; j<res; ++j)
+      {
+          if(j!=(res-1) && i!=(res-1))
+          {
+            Spring newLink1;
+            newLink1.PointMassA = i*res+j;
+            newLink1.PointMassB = (i+1)*res+j+1;
+            newLink1.restingDistance=distance;
+            newLink1.stiffness=0.5f;
+            m_springs.push_back(newLink1);
+            Spring newLink2;
+            newLink2.PointMassA = i*res+j+1;
+            newLink2.PointMassB = (i+1)*res+j;
+            newLink2.restingDistance=distance;
+            newLink2.stiffness=0.5f;
+            m_springs.push_back(newLink2);
+          }
+      }
+  }
+  // */
 }
 
 void ClothScene::updateSimulation()
 {
-  float deltaT = float(std::clock()-last_time)/CLOCKS_PER_SEC;
-  last_time = std::clock();
+  float deltaT = float(clock()-last_time)/CLOCKS_PER_SEC;
+  last_time = clock();
 
   float timestepLength = 0.0016f;
   int timesteps = floor(float(deltaT+leftOvertime)/timestepLength);
   leftOvertime=deltaT-timestepLength*timesteps;
 
   //std::cout<<"deltaT: "<<deltaT<<"timesteps"<<timesteps<<"\n";
-
+    timesteps=3;
   for(int n =0; n<timesteps; ++n)
   {
-    for(int m = 0; m<3; ++m)
+    for(int m = 0; m<5; ++m)
     {
       //------------------------------SPRINGS---------------------------------
-      for(int i=0; i<m_structuralSprings.size(); ++i)
+      for(int i=0; i<m_springs.size(); ++i)
       {
-        int A = m_structuralSprings[i].PointMassA;
-        int B = m_structuralSprings[i].PointMassB;
+        int A = m_springs[i].PointMassA;
+        int B = m_springs[i].PointMassB;
 
         glm::vec3 differenceXYZ = vertexPositions[A] - vertexPositions[B];
         float d = glm::length(differenceXYZ);
 
-        float differenceScalar = (m_structuralSprings[i].restingDistance -d)/d;
+        float differenceScalar = (m_springs[i].restingDistance -d)/d;
 
         glm::vec3 translation = differenceXYZ*0.5f*differenceScalar;
 
@@ -263,6 +335,7 @@ void ClothScene::updateSimulation()
       vertexPositions[res-1] = glm::vec3(float(res-1)/float(res),0.0f,0.0f);
     }
 
+    //---------------------------SPHERE COLLISION------------------------------
     for(int i=0; i<res; ++i)
     {
       for(int j=0; j<res; ++j)
