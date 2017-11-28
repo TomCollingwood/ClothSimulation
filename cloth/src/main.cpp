@@ -1,5 +1,4 @@
 // Must include our scene first because of GL dependency order
-#include "TVScene.h"
 #include "ClothScene.h"
 
 // This will probably already be included by a scene file

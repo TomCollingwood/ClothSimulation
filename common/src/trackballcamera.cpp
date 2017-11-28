@@ -160,7 +160,12 @@ void TrackballCamera::handleKey(int key, bool action)
           m_rolling=true;
           m_rollcount=0;
           m_rollright=false;
-        break;
+          break;
+      case GLFW_KEY_W:
+      case GLFW_KEY_S:
+      case GLFW_KEY_A:
+      case GLFW_KEY_D:
+          break;
       }
   }
 

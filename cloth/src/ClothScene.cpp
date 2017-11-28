@@ -5,6 +5,7 @@
 #include <ngl/NGLInit.h>
 #include <ngl/VAOPrimitives.h>
 #include <ngl/ShaderLib.h>
+#include <math.h>
 
 ClothScene::ClothScene() : Scene() {}
 
@@ -39,6 +40,8 @@ void ClothScene::initGL() noexcept {
     initVertexBuffers();
 
     glBindVertexArray(0);
+
+    last_time = clock();
 }
 
 void ClothScene::paintGL() noexcept {
@@ -96,6 +99,7 @@ void ClothScene::paintGL() noexcept {
                        true, // whether to transpose matrix
                        glm::value_ptr(N)); // a raw pointer to the data
 
+    updateSimulation();
 
     glBindVertexArray(vertexArrayIdx);
 
@@ -120,6 +124,8 @@ void ClothScene::paintGL() noexcept {
     // Draw our elements (the element buffer should still be enabled from the previous call to initScene())
     unsigned int num_tris = (res-1)*(res-1)*2;
     unsigned int num_points = res * res;
+
+    glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, elementsIdx);
     glDrawElements(GL_TRIANGLES, num_tris*3, GL_UNSIGNED_INT, 0);
@@ -177,12 +183,124 @@ void ClothScene::initSpringsAndVerts()
 {
   vertexPositions.resize(res*res);
   vertexNormals.resize(res*res);
+  pointMasses.resize(res*res);
+
   for(int i=0; i<res; ++i)
   {
     for(int j=0; j<res; ++j)
     {
-      vertexPositions[i*res + j]=glm::vec3(float(i)/float(res),float(j)/float(res),0.0f);
+      // j is x
+      // i is y
+      vertexPositions[i*res + j]=glm::vec3(float(j)/float(res),float(i)/float(res),0.0f);
       vertexNormals[i*res + j] = glm::vec3(0.0f,0.0f,1.0f);
+      PointMass newPoint;
+      newPoint.velocity = glm::vec3(0.0f);
+      newPoint.prevPos = glm::vec3(float(j)/float(res),float(i)/float(res),0.0f);
+      newPoint.index = i*res + j;
+      pointMasses[i*res + j]=newPoint;
+      //-----------SETUP SPRINGS---------------
+      if(j!=(res-1) && i!=(res-1))
+      {
+        Link newLink1;
+        newLink1.PointMassA = i*res+j;
+        newLink1.PointMassB = i*res+j+1;
+        newLink1.restingDistance=1.0f/float(res);
+        newLink1.stiffness=0.5f;
+        m_structuralSprings.push_back(newLink1);
+        Link newLink2;
+        newLink2.PointMassA = i*res+j;
+        newLink2.PointMassB = (i+1)*res+j;
+        newLink2.restingDistance=1.0f/float(res);
+        newLink2.stiffness=0.5f;
+        m_structuralSprings.push_back(newLink2);
+      }
+      //-------------FAR LEFT-------------------
+      else if(j==(res-1) && i!=(res-1))
+      {
+        Link newLink2;
+        newLink2.PointMassA = i*res+j;
+        newLink2.PointMassB = (i+1)*res+j;
+        newLink2.restingDistance=1.0f/float(res);
+        newLink2.stiffness=0.5f;
+        m_structuralSprings.push_back(newLink2);
+      }
+      //-------------TOP ROW------------------
+      else if(i==(res-1)&&j!=(res-1))
+      {
+        Link newLink1;
+        newLink1.PointMassA = i*res+j;
+        newLink1.PointMassB = i*res+j+1;
+        newLink1.restingDistance=1.0f/float(res);
+
+        newLink1.stiffness=0.5f;
+        m_structuralSprings.push_back(newLink1);
+      }
     }
   }
 }
+
+void ClothScene::updateSimulation()
+{
+  float deltaT = float(std::clock()-last_time)/CLOCKS_PER_SEC;
+  last_time = std::clock();
+
+  float timestepLength = 0.0016f;
+  int timesteps = floor(float(deltaT+leftOvertime)/timestepLength);
+  leftOvertime=deltaT-timestepLength*timesteps;
+
+  std::cout<<"deltaT: "<<deltaT<<"timesteps"<<timesteps<<"\n";
+
+  for(int n =0; n<timesteps; ++n)
+  {
+    for(int m = 0; m<3; ++m)
+    {
+      //------------------------------SPRINGS---------------------------------
+      for(int i=0; i<m_structuralSprings.size(); ++i)
+      {
+        int A = m_structuralSprings[i].PointMassA;
+        int B = m_structuralSprings[i].PointMassB;
+
+        glm::vec3 differenceXYZ = vertexPositions[A] - vertexPositions[B];
+        float d = glm::length(differenceXYZ);
+
+        float differenceScalar = (m_structuralSprings[i].restingDistance -d)/d;
+
+        glm::vec3 translation = differenceXYZ*0.5f*differenceScalar;
+
+        vertexPositions[A] += translation;
+        vertexPositions[B] -= translation;
+      }
+
+      //------------------------------ANCHORS---------------------------------
+      vertexPositions[0] = glm::vec3(0.0f,0.0f,0.0f);
+      vertexPositions[res-1] = glm::vec3(float(res-1)/float(res),0.0f,0.0f);
+    }
+
+    //--------------------------VERLET INTEGRATION----------------------------
+    for(int i=0; i<res; ++i)
+    {
+      for(int j=0; j<res; ++j)
+      {
+        pointMasses[i*res + j].velocity = vertexPositions[i*res + j] - pointMasses[i*res + j].prevPos;
+        pointMasses[i*res + j].prevPos = vertexPositions[i*res + j];
+
+        glm::vec3 acceleration = glm::vec3(0.0f,-0.0098f,0.0f);
+
+        vertexPositions[i*res + j] = vertexPositions[i*res + j] + pointMasses[i*res + j].velocity + acceleration*timestepLength;
+      }
+    }
+  }
+}
+
+//void ClothScene::handleKey(int key, bool action)
+//{
+//  if (action) {
+//      switch(key) {
+//      case GLFW_KEY_W:
+//      case GLFW_KEY_S:
+//      case GLFW_KEY_A:
+//      case GLFW_KEY_D:
+//          break;
+//      }
+//  }
+//}

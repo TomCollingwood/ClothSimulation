@@ -7,6 +7,21 @@
 #include <ngl/ShaderLib.h>
 #include "scene.h"
 
+struct PointMass
+{
+  glm::vec3 velocity;
+  glm::vec3 prevPos;
+  int index;
+};
+
+struct Link
+{
+  float restingDistance;
+  float stiffness;
+  int PointMassA;
+  int PointMassB;
+};
+
 class ClothScene : public Scene
 {
 public:
@@ -35,7 +50,7 @@ public:
 
     void initSpringsAndVerts();
 
-    void updateSimulation(float timestep);
+    void updateSimulation();
 
 private:
     /// Keep track of the currently active shader method
@@ -46,10 +61,18 @@ private:
     GLuint elementsIdx = 0;
     GLuint vertexArrayIdx;
 
+    bool firsttime = true;
+
+    clock_t last_time;
+
+    float leftOvertime = 0.0f;
+
     int res = 32;
 
     std::vector<glm::vec3> vertexPositions;
     std::vector<glm::vec3> vertexNormals;
+    std::vector<PointMass> pointMasses;
+    std::vector<Link> m_structuralSprings;
 };
 
 #endif // ClothScene_H
