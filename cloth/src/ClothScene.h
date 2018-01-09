@@ -9,10 +9,13 @@
 
 enum sphere_directions {STATIONARY, SPHERE_UP, SPHERE_DOWN, SPHERE_LEFT, SPHERE_RIGHT, SPHERE_FORWARDS, SPHERE_BACKWARDS};
 
+enum integrators {VERLET, EULER};
+
 struct PointMass
 {
   glm::vec3 velocity;
   glm::vec3 prevPos;
+  float mass;
   int index;
 };
 
@@ -20,6 +23,7 @@ struct Spring
 {
   float restingDistance;
   float stiffness;
+  float damping;
   int PointMassA;
   int PointMassB;
 };
@@ -52,7 +56,7 @@ public:
 
     void initSpringsAndVerts();
 
-    void updateSimulation();
+    void updateSimulation(integrators _whichIntegrator);
 
     void handleKey(int key, int action);
 
@@ -80,12 +84,13 @@ private:
     int res = 32;
 
     std::unique_ptr<ngl::Obj> m_sphere;
-    glm::vec3 sphereTranslation = glm::vec3(0.0f);
+    glm::vec3 sphereTranslation = glm::vec3(0.44f,0.33f,0.51f);
     sphere_directions m_sphereDirection;
 
 
     std::vector<glm::vec3> vertexPositions;
     std::vector<glm::vec3> vertexNormals;
+    std::vector<glm::vec3> m_forces;
     std::vector<PointMass> pointMasses;
     std::vector<Spring> m_springs;
 

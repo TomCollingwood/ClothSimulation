@@ -8,6 +8,8 @@
 #include <math.h>
 #include <time.h>
 
+#define _FORCES_
+
 ClothScene::ClothScene() : Scene() {}
 
 /**
@@ -81,7 +83,7 @@ void ClothScene::paintGL() noexcept {
 
     loadMatricesToShader(pid,glm::vec3(0.0f,0.0f,0.0f));
 
-    updateSimulation();
+    updateSimulation(VERLET);
 
     updateNormals();
 
@@ -172,6 +174,7 @@ void ClothScene::initSpringsAndVerts()
   vertexPositions.resize(res*res);
   vertexNormals.resize(res*res);
   pointMasses.resize(res*res);
+  m_forces.resize(res*res);
 
   //--------------------------STRUCTURAL SPRINGS---------------
 
@@ -179,14 +182,20 @@ void ClothScene::initSpringsAndVerts()
   {
     for(int j=0; j<res; ++j)
     {
+      m_forces[i*res + j] = glm::vec3(0.0f);
       // j is x
       // i is y
       vertexPositions[i*res + j]=glm::vec3(float(j)/float(res),float(i)/float(res),0.0f);
+
+      //if(i==0 && j==0) std::cout<<"0,0: "<<vertexPositions[i*res + j].x<<","<<vertexPositions[i*res + j].y<<","<<vertexPositions[i*res + j].z<<"\n";
+      //if(i==0 && j==res-1) std::cout<<"0,0: "<<vertexPositions[i*res + j].x<<","<<vertexPositions[i*res + j].y<<","<<vertexPositions[i*res + j].z<<"\n";
+
       vertexNormals[i*res + j] = glm::vec3(0.0f,0.0f,1.0f);
       PointMass newPoint;
       newPoint.velocity = glm::vec3(0.0f);
       newPoint.prevPos = glm::vec3(float(j)/float(res),float(i)/float(res),0.0f);
       newPoint.index = i*res + j;
+      newPoint.mass = 1.0f;
       pointMasses[i*res + j]=newPoint;
       //-----------SETUP SPRINGS---------------
       if(j!=(res-1) && i!=(res-1))
@@ -196,12 +205,14 @@ void ClothScene::initSpringsAndVerts()
         newLink1.PointMassB = i*res+j+1;
         newLink1.restingDistance=1.0f/float(res);
         newLink1.stiffness=0.5f;
+        newLink1.damping=0.5f;
         m_springs.push_back(newLink1);
         Spring newLink2;
         newLink2.PointMassA = i*res+j;
         newLink2.PointMassB = (i+1)*res+j;
         newLink2.restingDistance=1.0f/float(res);
         newLink2.stiffness=0.5f;
+        newLink2.damping=0.5f;
         m_springs.push_back(newLink2);
       }
       //-------------FAR LEFT-------------------
@@ -212,6 +223,7 @@ void ClothScene::initSpringsAndVerts()
         newLink2.PointMassB = (i+1)*res+j;
         newLink2.restingDistance=1.0f/float(res);
         newLink2.stiffness=0.5f;
+        newLink2.damping=0.5f;
         m_springs.push_back(newLink2);
       }
       //-------------TOP ROW------------------
@@ -223,6 +235,7 @@ void ClothScene::initSpringsAndVerts()
         newLink1.restingDistance=1.0f/float(res);
 
         newLink1.stiffness=0.5f;
+        newLink1.damping=0.5f;
         m_springs.push_back(newLink1);
       }
     }
@@ -242,13 +255,15 @@ void ClothScene::initSpringsAndVerts()
             newBend.PointMassA = i*res + j;
             newBend.PointMassB = i*res + j + 2;
             newBend.restingDistance = 2.0f/float(res);
-            newBend.stiffness=1.0f;
+            newBend.stiffness=0.5f;
+            newBend.damping=0.5f;
             m_springs.push_back(newBend);
             Spring newBend2;
             newBend2.PointMassA = i*res + j;
             newBend2.PointMassB = (i+2)*res + j;
             newBend2.restingDistance = 2.0f/float(res);
-            newBend2.stiffness=1.0f;
+            newBend2.stiffness=0.5f;
+            newBend2.damping=0.5f;
             m_springs.push_back(newBend2);
           }
           else if(i>=(res-2) && j<(res-2))
@@ -257,7 +272,8 @@ void ClothScene::initSpringsAndVerts()
               newBend.PointMassA = i*res + j;
               newBend.PointMassB = i*res + j + 2;
               newBend.restingDistance = 2.0f/float(res);
-              newBend.stiffness=1.0f;
+              newBend.stiffness=0.5f;
+              newBend.damping=0.5f;
               m_springs.push_back(newBend);
           }
           else if(j>=(res-2) && i<(res-2))
@@ -266,7 +282,8 @@ void ClothScene::initSpringsAndVerts()
               newBend2.PointMassA = i*res + j;
               newBend2.PointMassB = (i+2)*res + j;
               newBend2.restingDistance = 2.0f/float(res);
-              newBend2.stiffness=1.0f;
+              newBend2.stiffness=0.5f;
+              newBend2.damping=0.5f;
               m_springs.push_back(newBend2);
           }
       }
@@ -298,7 +315,7 @@ void ClothScene::initSpringsAndVerts()
   // */
 }
 
-void ClothScene::updateSimulation()
+void ClothScene::updateSimulation(integrators _whichIntegrator)
 {
   float deltaT = float(clock()-last_time)/CLOCKS_PER_SEC;
   last_time = clock();
@@ -311,29 +328,67 @@ void ClothScene::updateSimulation()
     timesteps=3;
   for(int n =0; n<timesteps; ++n)
   {
+#ifndef _FORCES_
     for(int m = 0; m<5; ++m)
     {
+#endif
+
+      std::fill(m_forces.begin(), m_forces.end(), glm::vec3(0.0f,0.0f,0.0f));
       //------------------------------SPRINGS---------------------------------
       for(int i=0; i<m_springs.size(); ++i)
       {
         int A = m_springs[i].PointMassA;
         int B = m_springs[i].PointMassB;
 
+#ifdef _FORCES_
+
+        float Kr = m_springs[i].stiffness;
+        float Kd = 0.1f;
+        glm::vec3 L = vertexPositions[A] - vertexPositions[B];
+        float Lnorm = glm::length(L);
+        float R = m_springs[i].restingDistance;
+        glm::vec3 vA = pointMasses[A].velocity;
+        glm::vec3 vB = pointMasses[B].velocity;
+
+        glm::vec3 ourForce = - Kr*(Lnorm - R)*(L/Lnorm) - Kd*(glm::dot(vA-vB,L)/Lnorm)*(L/Lnorm);
+        //if(A==0 || B==0) std::cout<<ourForce.x<<","<<ourForce.y<<","<<ourForce.z<<"\n";
+        m_forces[A] += ourForce;
+        m_forces[B] -= ourForce;
+#endif
+
+#ifndef _FORCES_
+
         glm::vec3 differenceXYZ = vertexPositions[A] - vertexPositions[B];
         float d = glm::length(differenceXYZ);
 
+        //-------------------------------------------------------------------
+
+        float im1 = 1.0f/pointMasses[A].mass;
+        float im2 = 1.0f/pointMasses[B].mass;
+
+        float scalarP1 = (im1 / (im1 + im2)) * m_springs[i].stiffness;
+        float scalarP2 =  m_springs[i].stiffness - scalarP1;
+
+        //-------------------------------------------------------------------
+
         float differenceScalar = (m_springs[i].restingDistance -d)/d;
 
-        glm::vec3 translation = differenceXYZ*0.5f*differenceScalar;
+        glm::vec3 translationP1 = differenceXYZ*scalarP1*differenceScalar;
+        glm::vec3 translationP2 = differenceXYZ*scalarP2*differenceScalar;
 
-        vertexPositions[A] += translation;
-        vertexPositions[B] -= translation;
+        vertexPositions[A] += translationP1;
+        vertexPositions[B] -= translationP2;
+#endif
       }
 
       //------------------------------ANCHORS---------------------------------
+
       vertexPositions[0] = glm::vec3(0.0f,0.0f,0.0f);
       vertexPositions[res-1] = glm::vec3(float(res-1)/float(res),0.0f,0.0f);
+
+#ifndef _FORCES_
     }
+#endif
 
     //---------------------------SPHERE COLLISION------------------------------
     for(int i=0; i<res; ++i)
@@ -351,19 +406,71 @@ void ClothScene::updateSimulation()
       }
     }
 
-    //--------------------------VERLET INTEGRATION----------------------------
+    //--------------------------VERLET/EULER INTEGRATION----------------------------
     for(int i=0; i<res; ++i)
     {
       for(int j=0; j<res; ++j)
       {
+#ifdef _FORCES_
+        // gravity
+        //m_forces[i*res + j] = m_forces[i*res + j] - glm::vec3(0.0f,0.98f,0.0f);
+
+        // acceleration
+        glm::vec3 an = m_forces[i*res + j] - glm::vec3(0.0f,0.98f,0.0f);
+
+        // velocity
+        pointMasses[i*res + j].velocity = pointMasses[i*res + j].velocity + an*timestepLength;
+
+        // position
+        vertexPositions[i*res + j] = vertexPositions[i*res + j] + pointMasses[i*res + j].velocity*timestepLength;
+
+
+#endif
+
+#ifndef _FORCES_
         pointMasses[i*res + j].velocity = vertexPositions[i*res + j] - pointMasses[i*res + j].prevPos;
         pointMasses[i*res + j].prevPos = vertexPositions[i*res + j];
 
-        glm::vec3 acceleration = glm::vec3(0.0f,-0.0098f,0.0f);
+        //glm::vec3 acceleration = glm::vec3(0.0f,-0.0098f,0.0f);
+        glm::vec3 acceleration = glm::vec3(0.0f,0.0f,0.0f);
 
         vertexPositions[i*res + j] = vertexPositions[i*res + j] + pointMasses[i*res + j].velocity + acceleration*timestepLength;
+
+#endif
       }
     }
+
+#ifdef _FORCES_
+    // LENGTH CONSTRAINT
+    for(int i=0; i<m_springs.size(); ++i)
+    {
+      int A = m_springs[i].PointMassA;
+      int B = m_springs[i].PointMassB;
+      float R = m_springs[i].restingDistance;
+
+      glm::vec3 L = vertexPositions[A] - vertexPositions[B];
+
+      float Lfloat = glm::length(L);
+      if(Lfloat > 1.2f*R)
+      {
+       if(A==0 || A==res-1)
+       {
+         vertexPositions[B] = vertexPositions[A] - (L/Lfloat)*1.2f*R;
+       }
+       else if(B==0 || B==res-1)
+       {
+         vertexPositions[A] = vertexPositions[B] + (L/Lfloat)*1.2f*R;
+       }
+       else
+       {
+         vertexPositions[B] = vertexPositions[A] - (L/Lfloat)*1.2f*R;
+       }
+       //std::cout<<"HELLO THERE!!\n";
+      }
+
+    }
+#endif
+
   }
   moveSphere();
 }
@@ -414,6 +521,7 @@ void ClothScene::handleKey(int key, int action)
       m_sphereDirection=STATIONARY;
       break;
     }
+    //std::cout<<sphereTranslation.x<<", "<<sphereTranslation.y<<", "<<sphereTranslation.z<<"\n";
   }
 }
 
@@ -422,7 +530,6 @@ void ClothScene::moveSphere()
   switch(m_sphereDirection) {
   case SPHERE_FORWARDS:
     sphereTranslation+=glm::vec3(0.0f,0.0f,0.01f);
-    std::cout<<"HELLO\n";
     break;
   case SPHERE_BACKWARDS:
     sphereTranslation+=glm::vec3(0.0f,0.0f,-0.01f);
