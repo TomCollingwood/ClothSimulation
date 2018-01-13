@@ -9,7 +9,7 @@
 
 enum sphere_directions {STATIONARY, SPHERE_UP, SPHERE_DOWN, SPHERE_LEFT, SPHERE_RIGHT, SPHERE_FORWARDS, SPHERE_BACKWARDS};
 
-enum integrators {VERLET, EULER};
+enum integrators {VERLET, EULER, EULER_FORCES};
 
 struct PointMass
 {

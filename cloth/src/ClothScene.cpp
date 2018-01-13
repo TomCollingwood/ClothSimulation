@@ -8,7 +8,7 @@
 #include <math.h>
 #include <time.h>
 
-#define _FORCES_
+//#define _FORCES_
 
 ClothScene::ClothScene() : Scene() {}
 
@@ -83,7 +83,7 @@ void ClothScene::paintGL() noexcept {
 
     loadMatricesToShader(pid,glm::vec3(0.0f,0.0f,0.0f));
 
-    updateSimulation(VERLET);
+    updateSimulation(EULER);
 
     updateNormals();
 
@@ -241,8 +241,6 @@ void ClothScene::initSpringsAndVerts()
     }
   }
 
-  // */
-
   //--------------BEND SPRINGS----------------------
 
   for(int i =0 ; i<res; ++i)
@@ -312,7 +310,6 @@ void ClothScene::initSpringsAndVerts()
           }
       }
   }
-  // */
 }
 
 void ClothScene::updateSimulation(integrators _whichIntegrator)
@@ -320,75 +317,69 @@ void ClothScene::updateSimulation(integrators _whichIntegrator)
   float deltaT = float(clock()-last_time)/CLOCKS_PER_SEC;
   last_time = clock();
 
-  float timestepLength = 0.0016f;
+  float timestepLength = 0.016f;
   int timesteps = floor(float(deltaT+leftOvertime)/timestepLength);
   leftOvertime=deltaT-timestepLength*timesteps;
 
   //std::cout<<"deltaT: "<<deltaT<<"timesteps"<<timesteps<<"\n";
-    timesteps=3;
+  timesteps=3;
   for(int n =0; n<timesteps; ++n)
   {
-#ifndef _FORCES_
     for(int m = 0; m<5; ++m)
     {
-#endif
-
       std::fill(m_forces.begin(), m_forces.end(), glm::vec3(0.0f,0.0f,0.0f));
       //------------------------------SPRINGS---------------------------------
       for(int i=0; i<m_springs.size(); ++i)
       {
         int A = m_springs[i].PointMassA;
         int B = m_springs[i].PointMassB;
+        if(_whichIntegrator==EULER_FORCES)
+        {
+          float Kr = m_springs[i].stiffness;
+          float Kd = 0.1f;
+          glm::vec3 L = vertexPositions[A] - vertexPositions[B];
+          float Lnorm = glm::length(L);
+          float R = m_springs[i].restingDistance;
+          glm::vec3 vA = pointMasses[A].velocity;
+          glm::vec3 vB = pointMasses[B].velocity;
 
-#ifdef _FORCES_
+          glm::vec3 ourForce = - Kr*(Lnorm - R)*(L/Lnorm) - Kd*(glm::dot(vA-vB,L)/Lnorm)*(L/Lnorm);
+          //if(A==0 || B==0) std::cout<<ourForce.x<<","<<ourForce.y<<","<<ourForce.z<<"\n";
+          m_forces[A] += ourForce;
+          m_forces[B] -= ourForce;
+        }
+        else
+        {
+          glm::vec3 differenceXYZ = vertexPositions[A] - vertexPositions[B];
+          float d = glm::length(differenceXYZ);
 
-        float Kr = m_springs[i].stiffness;
-        float Kd = 0.1f;
-        glm::vec3 L = vertexPositions[A] - vertexPositions[B];
-        float Lnorm = glm::length(L);
-        float R = m_springs[i].restingDistance;
-        glm::vec3 vA = pointMasses[A].velocity;
-        glm::vec3 vB = pointMasses[B].velocity;
+          //-------------------------------------------------------------------
 
-        glm::vec3 ourForce = - Kr*(Lnorm - R)*(L/Lnorm) - Kd*(glm::dot(vA-vB,L)/Lnorm)*(L/Lnorm);
-        //if(A==0 || B==0) std::cout<<ourForce.x<<","<<ourForce.y<<","<<ourForce.z<<"\n";
-        m_forces[A] += ourForce;
-        m_forces[B] -= ourForce;
-#endif
+          float im1 = 1.0f/pointMasses[A].mass;
+          float im2 = 1.0f/pointMasses[B].mass;
 
-#ifndef _FORCES_
+          float scalarP1 = (im1 / (im1 + im2)) * m_springs[i].stiffness;
+          float scalarP2 =  m_springs[i].stiffness - scalarP1;
 
-        glm::vec3 differenceXYZ = vertexPositions[A] - vertexPositions[B];
-        float d = glm::length(differenceXYZ);
+          //-------------------------------------------------------------------
 
-        //-------------------------------------------------------------------
+          float differenceScalar = (m_springs[i].restingDistance -d)/d;
 
-        float im1 = 1.0f/pointMasses[A].mass;
-        float im2 = 1.0f/pointMasses[B].mass;
+          glm::vec3 translationP1 = differenceXYZ*scalarP1*differenceScalar;
+          glm::vec3 translationP2 = differenceXYZ*scalarP2*differenceScalar;
 
-        float scalarP1 = (im1 / (im1 + im2)) * m_springs[i].stiffness;
-        float scalarP2 =  m_springs[i].stiffness - scalarP1;
-
-        //-------------------------------------------------------------------
-
-        float differenceScalar = (m_springs[i].restingDistance -d)/d;
-
-        glm::vec3 translationP1 = differenceXYZ*scalarP1*differenceScalar;
-        glm::vec3 translationP2 = differenceXYZ*scalarP2*differenceScalar;
-
-        vertexPositions[A] += translationP1;
-        vertexPositions[B] -= translationP2;
-#endif
+          vertexPositions[A] += translationP1;
+          vertexPositions[B] -= translationP2;
+        }
       }
 
       //------------------------------ANCHORS---------------------------------
 
-      vertexPositions[0] = glm::vec3(0.0f,0.0f,0.0f);
-      vertexPositions[res-1] = glm::vec3(float(res-1)/float(res),0.0f,0.0f);
+      vertexPositions[(res-1)*res] = glm::vec3(0.0f,(float(res)-1.0f)/float(res),0.0f);
+      vertexPositions[(res-1)*res + res -1] = glm::vec3((float(res)-1.0f)/float(res),(float(res)-1.0f)/float(res),0.0f);
 
-#ifndef _FORCES_
     }
-#endif
+
 
     //---------------------------SPHERE COLLISION------------------------------
     for(int i=0; i<res; ++i)
@@ -411,66 +402,41 @@ void ClothScene::updateSimulation(integrators _whichIntegrator)
     {
       for(int j=0; j<res; ++j)
       {
-#ifdef _FORCES_
-        // gravity
-        //m_forces[i*res + j] = m_forces[i*res + j] - glm::vec3(0.0f,0.98f,0.0f);
 
-        // acceleration
-        glm::vec3 an = m_forces[i*res + j] - glm::vec3(0.0f,0.98f,0.0f);
+        if(_whichIntegrator==VERLET)
+        {
+          pointMasses[i*res + j].velocity = vertexPositions[i*res + j] - pointMasses[i*res + j].prevPos;
+          pointMasses[i*res + j].prevPos = vertexPositions[i*res + j];
 
-        // velocity
-        pointMasses[i*res + j].velocity = pointMasses[i*res + j].velocity + an*timestepLength;
+          glm::vec3 acceleration = glm::vec3(0.0f,-0.0098f,0.0f);
+          //glm::vec3 acceleration = glm::vec3(0.0f,0.0f,0.0f);
 
-        // position
-        vertexPositions[i*res + j] = vertexPositions[i*res + j] + pointMasses[i*res + j].velocity*timestepLength;
+          vertexPositions[i*res + j] = vertexPositions[i*res + j] + pointMasses[i*res + j].velocity + acceleration*timestepLength;
+        }
+        else if(_whichIntegrator==EULER)
+        {
+          glm::vec3 gravity = glm::vec3(0.0f,-0.0098f,0.0f);
+          //glm::vec3 gravity = glm::vec3(0.0f,0.0f,0.0f);
+          pointMasses[i*res + j].velocity = pointMasses[i*res + j].velocity + gravity*timestepLength;
+          vertexPositions[i*res + j] = vertexPositions[i*res + j] + pointMasses[i*res + j].velocity*timestepLength;
+        }
+        else if(_whichIntegrator==EULER_FORCES)
+        {
+          // gravity
+          //m_forces[i*res + j] = m_forces[i*res + j] - glm::vec3(0.0f,0.98f,0.0f);
 
+          // acceleration
+          glm::vec3 an = m_forces[i*res + j] - glm::vec3(0.0f,0.0098f,0.0f);
 
-#endif
+          // velocity
+          pointMasses[i*res + j].velocity = pointMasses[i*res + j].velocity + an*timestepLength;
 
-#ifndef _FORCES_
-        pointMasses[i*res + j].velocity = vertexPositions[i*res + j] - pointMasses[i*res + j].prevPos;
-        pointMasses[i*res + j].prevPos = vertexPositions[i*res + j];
+          // position
+          vertexPositions[i*res + j] = vertexPositions[i*res + j] + pointMasses[i*res + j].velocity*timestepLength;
 
-        //glm::vec3 acceleration = glm::vec3(0.0f,-0.0098f,0.0f);
-        glm::vec3 acceleration = glm::vec3(0.0f,0.0f,0.0f);
-
-        vertexPositions[i*res + j] = vertexPositions[i*res + j] + pointMasses[i*res + j].velocity + acceleration*timestepLength;
-
-#endif
+        }
       }
     }
-
-#ifdef _FORCES_
-    // LENGTH CONSTRAINT
-    for(int i=0; i<m_springs.size(); ++i)
-    {
-      int A = m_springs[i].PointMassA;
-      int B = m_springs[i].PointMassB;
-      float R = m_springs[i].restingDistance;
-
-      glm::vec3 L = vertexPositions[A] - vertexPositions[B];
-
-      float Lfloat = glm::length(L);
-      if(Lfloat > 1.2f*R)
-      {
-       if(A==0 || A==res-1)
-       {
-         vertexPositions[B] = vertexPositions[A] - (L/Lfloat)*1.2f*R;
-       }
-       else if(B==0 || B==res-1)
-       {
-         vertexPositions[A] = vertexPositions[B] + (L/Lfloat)*1.2f*R;
-       }
-       else
-       {
-         vertexPositions[B] = vertexPositions[A] - (L/Lfloat)*1.2f*R;
-       }
-       //std::cout<<"HELLO THERE!!\n";
-      }
-
-    }
-#endif
-
   }
   moveSphere();
 }
@@ -593,8 +559,8 @@ void ClothScene::updateNormals()
       glm::vec3 C = vertexPositions[i*res + j] - vertexPositions[i*res + j -1];
       glm::vec3 D = vertexPositions[i*res + j] - vertexPositions[(i-1)*res + j];
 
-      glm::vec3 vect1 = glm::cross(A,B);
-      glm::vec3 vect2 = glm::cross(C,D);
+      glm::vec3 vect1 = glm::cross(B,A);
+      glm::vec3 vect2 = glm::cross(D,C);
 
       vertexNormals[i*res + j]=glm::normalize((vect1+vect2)/2.0f);
     }
